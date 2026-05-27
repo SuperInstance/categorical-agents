@@ -1,0 +1,11 @@
+[package]
+name = "categorical-agents"
+version = "0.1.0"
+edition = "2021"
+description = "Categorical formalization of agent capabilities as symmetric monoidal category objects with protocol morphisms"
+license = "MIT"
+keywords = ["category-theory", "agents", "monoidal", "composition", "protocols"]
+categories = ["mathematics", "science"]
+repository = "https://github.com/SuperInstance/categorical-agents"
+
+[dependencies]
