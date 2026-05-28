@@ -1,7 +1,6 @@
 //! Functors between agent categories — mapping one agent architecture to another.
 
 use crate::capability::Capability;
-use crate::category::AgentCategory;
 use crate::protocol::Protocol;
 
 /// A functor F : C → D between agent categories.
@@ -51,8 +50,8 @@ impl AgentFunctor {
     /// Returns true if the functor preserves composition for all mapped morphisms.
     pub fn verify_composition(&self) -> bool {
         // For each pair of composable mapped protocols, verify composition
-        for (_, pf1) in &self.morphism_map {
-            for (_, pf2) in &self.morphism_map {
+        for pf1 in self.morphism_map.values() {
+            for pf2 in self.morphism_map.values() {
                 if pf1.target == pf2.source {
                     // They compose in the target category
                     if pf1.compose(pf2).is_err() {

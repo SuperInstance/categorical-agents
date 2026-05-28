@@ -39,7 +39,7 @@ impl Composition {
 
     /// Feedback loop: A → B → A (a trace in category theory).
     /// Tr^A_B(f : A⊗B → A⊗C) : B → C
-    pub fn trace(f: &Protocol, cat: &AgentCategory) -> Option<Protocol> {
+    pub fn trace(f: &Protocol, _cat: &AgentCategory) -> Option<Protocol> {
         // Simplified: if f : A⊗B → A⊗C, then Tr(f) : B → C
         // by "feeding back" the A output to the A input
         if f.source.name.contains('⊗') && f.target.name.contains('⊗') {

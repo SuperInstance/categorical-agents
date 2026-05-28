@@ -1,3 +1,9 @@
+#![allow(
+    clippy::needless_range_loop,
+    clippy::new_without_default,
+    clippy::type_complexity,
+    dead_code
+)]
 //! # Categorical Agents
 //!
 //! Formalizes agent capabilities as objects in a symmetric monoidal category.
