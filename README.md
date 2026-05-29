@@ -39,3 +39,5 @@ let composed = cat.compose(&proto1, &proto2);
 ## License
 
 MIT
+
+Part of the [SuperInstance OpenConstruct](https://github.com/SuperInstance/OpenConstruct) ecosystem.
