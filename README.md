@@ -1,327 +1,366 @@
 # categorical-agents
 
-**Category theory for agent capabilities: objects as capabilities, morphisms as protocols, composition as tensor products.**
+Composition of agents follows the same laws as composition of functions. You can reason about your fleet the same way you reason about your code.
 
-A Rust library that formalizes multi-agent systems as a symmetric monoidal category. Capabilities are objects, protocols are morphisms, and agent coordination reduces to categorical composition.
+## The Problem
 
-## What This Does
+You have agents. One searches, one summarizes, one acts. How do you compose them? Not with ad-hoc glue code — with *algebra*.
 
-This library models agent systems using category theory:
-
-1. **Capabilities as objects** — Each agent has a capability (compute, sense, act). Capabilities compose via tensor product.
-2. **Protocols as morphisms** — A protocol transforms one capability into another. Protocols compose (sequentially) and tensor (in parallel).
-3. **Categories as architecture** — The full collection of capabilities and protocols forms a symmetric monoidal category with associators, unitors, and symmetry isomorphisms.
-4. **Functors as architecture translations** — Map one agent architecture to another while preserving structure.
-5. **Composition strategies** — Sequential, parallel, fan-out, and trace (feedback loop) composition.
-
-## Key Idea
-
-In a symmetric monoidal category (SMC), you get:
-- **Objects** (capabilities) with a tensor product ⊗ for parallel composition
-- **Morphisms** (protocols) f: A → B that compose sequentially
-- **Structural isomorphisms**: associativity α, symmetry σ, and unitors λ, ρ
-
-This library treats agent fleets as such a category. The payoff: type-safe capability composition, protocol verification via functoriality checks, and a mathematical framework for reasoning about multi-agent coordination.
-
-## Install
-
-```toml
-[dependencies]
-categorical-agents = "0.1.0"
+```rust
+use categorical_agents::*;
 ```
 
-Or:
+---
 
-```sh
-cargo add categorical-agents
-```
+## 1. Capabilities as Objects
 
-Requires Rust 2021 edition. No external dependencies.
-
-## Quick Start
-
-### Capabilities and Tensor Products
+Every agent has a capability — what it *does*. Capabilities are objects in a category.
 
 ```rust
 use categorical_agents::Capability;
 
-let sense = Capability::new("sense").with_arity(1);
-let compute = Capability::new("compute").with_arity(2);
-let act = Capability::new("act");
+let search    = Capability::new("search").with_arity(1);
+let summarize = Capability::new("summarize").with_arity(1);
+let act       = Capability::new("act").with_arity(1);
 
-// Parallel composition: having both capabilities
-let combined = sense.tensor(&compute);
-assert_eq!(combined.name, "sense⊗compute");
-assert_eq!(combined.arity, 3);
+println!("search:    {} (arity {})", search, search.arity);
+println!("summarize: {} (arity {})", summarize, summarize.arity);
+println!("act:       {} (arity {})", act, act.arity);
 
-// The unit capability I (identity for tensor)
+// The tensor product: "both at the same time"
+let search_and_summarize = search.tensor(&summarize);
+println!("{} ⊗ {} = {} (arity {})",
+    search, summarize, search_and_summarize, search_and_summarize.arity);
+// search ⊗ summarize = search⊗summarize (arity 2)
+// This is parallel composition: both capabilities running simultaneously
+
+// The unit: "do nothing"
 let unit = Capability::unit();
-let same = sense.tensor(&unit); // ≅ sense
+println!("Unit: {} (arity {})", unit, unit.arity);
+// I is the identity for tensor: A ⊗ I = A
 
-// Internal hom: "capability of transforming sense into act"
-let hom = sense.internal_hom(&act); // sense*⊗act
+// The dual: "the input side of a capability"
+let input = Capability::new("input");
+let dual = input.dual();
+println!("Dual of {}: {}", input, dual);
+// input → input* (the anti-capability, the type of data it consumes)
+
+// Internal hom: "how to transform A into B"
+let transform = search.internal_hom(&act);
+println!("search ⊸ act = {}", transform);
+// search*⊗act = "the capability of turning search results into actions"
 ```
 
-### Protocols as Morphisms
+**The tensor product IS parallel execution.** The dual IS the input type. The internal hom IS the transformation.
+
+---
+
+## 2. Protocols as Morphisms
+
+A protocol connects one capability to another. It's a morphism in the category.
 
 ```rust
 use categorical_agents::{Capability, Protocol};
 
-let f = Protocol::new("encode", Capability::new("raw"), Capability::new("encoded"))
-    .with_cost(2.0);
-let g = Protocol::new("send", Capability::new("encoded"), Capability::new("sent"))
-    .with_cost(3.0);
+let raw      = Capability::new("raw");
+let encoded  = Capability::new("encoded");
+let sent     = Capability::new("sent");
+let received = Capability::new("received");
 
-// Sequential composition: g ∘ f
-let gf = f.compose(&g).unwrap();
-assert_eq!(gf.source, Capability::new("raw"));
-assert_eq!(gf.target, Capability::new("sent"));
-assert_eq!(gf.cost, 5.0); // costs add
+// Protocols: morphisms between capabilities
+let encode = Protocol::new("encode", raw, encoded).with_cost(0.5);
+let send   = Protocol::new("send", encoded, sent).with_cost(1.0);
+let recv   = Protocol::new("receive", sent, received).with_cost(0.3);
 
-// Parallel composition: f ⊗ g
-let fg = f.tensor(&g);
-// source: raw⊗encoded, target: encoded⊗sent
+println!("encode: {} → {} (cost: {})", encode.source, encode.target, encode.cost);
+println!("send:   {} → {} (cost: {})", send.source, send.target, send.cost);
 
-// Identity morphism
-let id = Protocol::identity(&Capability::new("data"));
-assert!(id.is_identity());
+// Compose: g ∘ f means "do f, then do g"
+let send_encoded = encode.compose(&send).unwrap();
+println!("{} ∘ {} = {} → {} (cost: {})",
+    send.name, encode.name, send_encoded.source, send_encoded.target, send_encoded.cost);
+// send ∘ encode = raw → sent (cost: 1.5)
+// f.target MUST equal g.source — type safety from the math
+
+// Identity: "do nothing" protocol
+let id_raw = Protocol::identity(&Capability::new("raw"));
+println!("id_raw: {} → {} (cost: {})", id_raw.source, id_raw.target, id_raw.cost);
+// id ∘ f = f ∘ id = f
 ```
 
-### The Agent Category
+**Composition fails when types don't match.** This is the entire point:
+
+```rust
+// Try to compose incompatible protocols
+let bad = encode.compose(&recv);
+match bad {
+    Err(msg) => println!("Blocked: {}", msg),
+    // "Cannot compose: encode ends at encoded but receive starts at sent"
+    Ok(_) => println!("This should not happen"),
+}
+// The type system prevents nonsensical compositions.
+// encode: raw → encoded
+// receive: sent → received
+// encoded ≠ sent → composition blocked
+```
+
+---
+
+## 3. The Category: Objects, Morphisms, and Laws
 
 ```rust
 use categorical_agents::{AgentCategory, Capability, Protocol};
 
 let mut cat = AgentCategory::new();
 
-// Add protocols (capabilities auto-registered)
-cat.add_protocol(Protocol::new("sense-raw", Capability::new("sensor"), Capability::new("raw")));
-cat.add_protocol(Protocol::new("raw-processed", Capability::new("raw"), Capability::new("processed")));
-cat.add_protocol(Protocol::new("processed-action", Capability::new("processed"), Capability::new("action")));
+// Register capabilities (objects)
+cat.add_capability(Capability::new("raw"));
+cat.add_capability(Capability::new("parsed"));
+cat.add_capability(Capability::new("analyzed"));
+cat.add_capability(Capability::new("acted"));
 
-// Find a path through the category (BFS composition)
-let path = cat.find_path("sensor", "action");
-assert!(path.is_some());
+// Register protocols (morphisms)
+cat.add_protocol(Protocol::new("parse",   Capability::new("raw"),     Capability::new("parsed")));
+cat.add_protocol(Protocol::new("analyze", Capability::new("parsed"),  Capability::new("analyzed")));
+cat.add_protocol(Protocol::new("execute", Capability::new("analyzed"),Capability::new("acted")));
 
-// Structural isomorphisms
-let a = Capability::new("sense");
-let b = Capability::new("act");
-let sigma = cat.symmetry(&a, &b); // σ: sense⊗act → act⊗sense
-let lambda = cat.left_unitor(&a);  // λ: I⊗sense → sense
-let rho = cat.right_unitor(&a);    // ρ: sense⊗I → sense
+// Direct lookup
+if let Some(p) = cat.find_protocol("raw", "parsed") {
+    println!("Found: {} → {}", p.source, p.target);
+}
+
+// Path finding: compose through the chain
+if let Some(path) = cat.find_path("raw", "acted") {
+    let full = path.iter()
+        .map(|p| format!("{}→{}", p.source, p.target))
+        .collect::<Vec<_>>()
+        .join(" ∘ ");
+    println!("Path from raw to acted: {}", full);
+    let total_cost: f64 = path.iter().map(|p| p.cost).sum();
+    println!("Total cost: {}", total_cost);
+}
+// raw → parsed → analyzed → acted
+
+// No path exists? Returns None
+assert!(cat.find_path("raw", "nonexistent").is_none());
 ```
 
-### Functors Between Architectures
+### The Structural Isomorphisms
 
 ```rust
-use categorical_agents::{AgentFunctor, Capability, Protocol};
+// Symmetry: swap the order of parallel execution
+let sense = Capability::new("sense");
+let act = Capability::new("act");
+let sigma = cat.symmetry(&sense, &act);
+println!("σ: {} → {} (cost: {})", sigma.source, sigma.target, sigma.cost);
+// sense⊗act → act⊗sense
+// This costs nothing — it's just reordering parallel tasks
 
-let mut embed = AgentFunctor::new("embed");
-embed.map_object("compute", Capability::new("gpu-compute"));
-embed.map_object("sense", Capability::new("lidar-sense"));
+// Left unitor: I⊗A = A
+let lambda = cat.left_unitor(&sense);
+println!("λ: {} → {} (cost: {})", lambda.source, lambda.target, lambda.cost);
+// I⊗sense → sense
 
-// Apply functor to a capability
-let mapped = embed.apply_capability(&Capability::new("compute"));
-assert_eq!(mapped.unwrap().name, "gpu-compute");
-
-// Compose functors: G ∘ F
-let mut translate = AgentFunctor::new("translate");
-translate.map_object("gpu-compute", Capability::new("tpu-compute"));
-let composed = embed.compose(&translate);
+// Right unitor: A⊗I = A
+let rho = cat.right_unitor(&sense);
+println!("ρ: {} → {} (cost: {})", rho.source, rho.target, rho.cost);
+// sense⊗I → sense
 ```
 
-### Composition Strategies
+---
+
+## 4. Tensor Product: Parallel Composition
 
 ```rust
-use categorical_agents::{Capability, Composition, AgentCategory, Protocol};
+use categorical_agents::{Capability, Protocol, AgentCategory};
 
-let mut cat = AgentCategory::new();
-cat.add_protocol(Protocol::new("a", Capability::new("x"), Capability::new("y")));
-cat.add_protocol(Protocol::new("b", Capability::new("y"), Capability::new("z")));
+// Two agents working in parallel
+let fetch  = Protocol::new("fetch",  Capability::new("url"),  Capability::new("html"));
+let parse  = Protocol::new("parse",  Capability::new("text"), Capability::new("data"));
 
-// Sequential: chain agents via protocols
-let agents = vec![Capability::new("x"), Capability::new("y"), Capability::new("z")];
-let chain = Composition::sequential(&agents, &cat);
-
-// Parallel: tensor all capabilities
-let parallel = Composition::parallel(&agents);
-assert_eq!(parallel.name, "x⊗y⊗z");
-
-// Fan-out: replicate a capability n times
-let workers = Composition::fan_out(&Capability::new("worker"), 4);
-assert_eq!(workers.arity, 4);
+// Tensor: both protocols run simultaneously
+let parallel = fetch.tensor(&parse);
+println!("fetch ⊗ parse: {} → {}", parallel.source, parallel.source);
+// url⊗text → html⊗data
+println!("Source: {} (arity {})", parallel.source, parallel.source.arity);
+println!("Target: {} (arity {})", parallel.target, parallel.target.arity);
+println!("Cost: {}", parallel.cost); // sum of both costs
 ```
 
-### Capability Store
+**The tensor product of protocols IS parallel execution.** The cost IS the sum. The arity IS the sum.
+
+---
+
+## 5. Capability Store: Your Agent Registry
 
 ```rust
 use categorical_agents::{Capability, CapabilityStore};
 
 let mut store = CapabilityStore::new();
-store.register("agent-1", Capability::new("compute"));
-store.register("agent-2", Capability::new("sense"));
-store.register("agent-3", Capability::new("communicate"));
 
-// Find agents by capability prefix
-let compute_agents = store.find_by_capability("compute"); // agent-1
+// Register your fleet
+store.register("search-agent",  Capability::new("search").with_tag("retrieval"));
+store.register("embed-agent",   Capability::new("embed").with_tag("ml"));
+store.register("rank-agent",    Capability::new("rank").with_tag("ml"));
+store.register("summary-agent", Capability::new("summarize").with_tag("generation"));
+store.register("code-agent",    Capability::new("code").with_tag("generation"));
 
-// Joint capability via tensor product
-let joint = store.joint_capability("agent-1", "agent-2").unwrap();
-assert_eq!(joint.name, "compute⊗sense");
+println!("Registered {} agents", store.agents().len());
+
+// Find agents by capability
+let ml_agents = store.find_by_capability("embed");
+println!("Embedding agents: {:?}", ml_agents);
+
+let gen_agents = store.find_by_capability("code");
+println!("Code agents: {:?}", gen_agents);
+
+// Compute joint capability: what can two agents do together?
+if let Some(joint) = store.joint_capability("search-agent", "summary-agent") {
+    println!("search + summary = {} (arity {})", joint, joint.arity);
+}
+// search⊗summarize — they can search AND summarize in parallel
 ```
+
+---
+
+## 6. Composition Strategies: Sequential, Parallel, Fan-out
+
+```rust
+use categorical_agents::{Capability, Protocol, AgentCategory, Composition};
+
+let mut cat = AgentCategory::new();
+cat.add_protocol(Protocol::new("fetch",  Capability::new("url"),    Capability::new("html")));
+cat.add_protocol(Protocol::new("parse",  Capability::new("html"),   Capability::new("data")));
+cat.add_protocol(Protocol::new("embed",  Capability::new("data"),   Capability::new("vectors")));
+cat.add_protocol(Protocol::new("search", Capability::new("vectors"),Capability::new("results")));
+
+// Sequential: one after another (pipeline)
+let agents = vec![
+    Capability::new("url"),
+    Capability::new("html"),
+    Capability::new("data"),
+    Capability::new("vectors"),
+    Capability::new("results"),
+];
+if let Some(pipeline) = Composition::sequential(&agents, &cat) {
+    println!("Pipeline: {} → {} (cost: {})",
+        pipeline.source, pipeline.target, pipeline.cost);
+}
+// url → results through the full chain
+
+// Parallel: all at once
+let parallel_agents = vec![
+    Capability::new("search"),
+    Capability::new("summarize"),
+    Capability::new("code"),
+];
+let combined = Composition::parallel(&parallel_agents);
+println!("Parallel: {} (arity {})", combined, combined.arity);
+// search⊗summarize⊗code
+
+// Fan-out: one capability replicated to N workers
+let worker = Capability::new("worker").with_arity(1);
+let army = Composition::fan_out(&worker, 5);
+println!("Fan-out 5 workers: {} (arity {})", army, army.arity);
+// worker⊗worker⊗worker⊗worker⊗worker (arity 5)
+```
+
+### Feedback Loops (Trace)
+
+```rust
+// A trace: agent A talks to agent B, gets feedback, repeats
+let feedback = Protocol::new("iterate",
+    Capability::new("state").tensor(&Capability::new("input")),  // A⊗B
+    Capability::new("state").tensor(&Capability::new("output")), // A⊗C
+);
+let cat = AgentCategory::new();
+let traced = Composition::trace(&feedback, &cat);
+if let Some(t) = traced {
+    println!("Traced (feedback loop): {} → {} (cost: {})",
+        t.source, t.target, t.cost);
+}
+// The A part is "fed back" — only B→C remains visible
+```
+
+---
+
+## 7. Functors: Map Between Architectures
+
+A functor maps one category to another, preserving structure. Simulation → Production. Testing → Deployment.
+
+```rust
+use categorical_agents::{AgentFunctor, Capability, Protocol};
+
+// Functor: translate simulation capabilities to production
+let mut sim_to_prod = AgentFunctor::new("deploy");
+sim_to_prod.map_object("search-sim",  Capability::new("search-prod"));
+sim_to_prod.map_object("embed-sim",   Capability::new("embed-prod"));
+sim_to_prod.map_object("rank-sim",    Capability::new("rank-prod"));
+sim_to_prod.map_object("code-sim",    Capability::new("code-prod"));
+
+// Map protocols too
+sim_to_prod.map_morphism("fetch", Protocol::new(
+    "fetch-prod",
+    Capability::new("url-prod"),
+    Capability::new("html-prod"),
+).with_cost(0.1)); // production is faster
+
+// Apply the functor
+let sim_cap = Capability::new("search-sim");
+if let Some(prod_cap) = sim_to_prod.apply_capability(&sim_cap) {
+    println!("{} → {}", sim_cap, prod_cap);
+}
+
+// Verify functoriality: F(g∘f) = F(g)∘F(f)
+if sim_to_prod.verify_composition() {
+    println!("✓ Composition preserved under functor");
+}
+
+// Compose functors: sim → staging → production
+let mut staging_to_prod = AgentFunctor::new("promote");
+staging_to_prod.map_object("embed-prod", Capability::new("embed-v2"));
+let full = sim_to_prod.compose(&staging_to_prod);
+println!("Full mapping: {} — sim → staging → prod", full.name);
+```
+
+---
+
+## The ASCII Diagram
+
+```
+Agent Category C:
+  Objects: search, summarize, act, ...
+  Morphisms: encode, send, parse, ...
+
+  Composition: g ∘ f : A → C  when  f: A → B, g: B → C
+  Identity: id_A : A → A
+  Tensor: A ⊗ B = parallel(A, B)
+
+Functor F : C → D:
+  Maps capabilities to capabilities
+  Maps protocols to protocols
+  Preserves: identity, composition, tensor
+
+Your fleet:
+  search ──parse──▶ data ──embed──▶ vectors ──rank──▶ results
+                                                      │
+  summary ◀──format── results ◀──────────────────────┘
+                              │
+  act ◀──decide── analyzed ◀──┘
+
+This IS a category. The protocols ARE morphisms.
+Compose them, verify them, optimize them — with algebra.
+```
+
+---
 
 ## API Reference
 
-### `Capability`
-
-An object in the capability category.
-
-| Method | Description |
-|--------|-------------|
-| `new(name)` | Create a capability |
-| `with_arity(n)` | Set input arity |
-| `with_tag(tag)` | Add metadata tag |
-| `tensor(other)` | Parallel composition A ⊗ B |
-| `dual()` | Anti-capability A* |
-| `internal_hom(other)` | Linear hom A ⊸ B = A* ⊗ B |
-| `is_unit()` | Check if identity element I |
-| `unit()` | The unit capability I |
-
-### `Protocol`
-
-A morphism f: A → B between capabilities.
-
-| Method | Description |
-|--------|-------------|
-| `new(name, source, target)` | Create a protocol |
-| `with_cost(c)` | Set execution cost |
-| `compose(other)` | Sequential composition g ∘ f |
-| `tensor(other)` | Parallel composition f ⊗ g |
-| `identity(cap)` | Identity morphism id_A |
-| `is_identity()` | Check if identity |
-
-### `AgentCategory`
-
-The symmetric monoidal category of capabilities and protocols.
-
-| Method | Description |
-|--------|-------------|
-| `new()` | Empty category (with unit object) |
-| `add_capability(cap)` | Add an object |
-| `add_protocol(proto)` | Add a morphism |
-| `find_protocol(src, tgt)` | Direct morphism lookup |
-| `find_path(src, tgt)` | BFS path finding via composition |
-| `symmetry(a, b)` | σ: A⊗B → B⊗A |
-| `left_unitor(a)` | λ: I⊗A → A |
-| `right_unitor(a)` | ρ: A⊗I → A |
-
-### `AgentFunctor`
-
-A structure-preserving map between agent categories.
-
-| Method | Description |
-|--------|-------------|
-| `new(name)` | Create a named functor |
-| `map_object(src, target)` | Map capability → capability |
-| `map_morphism(src, target)` | Map protocol → protocol |
-| `apply_capability(cap)` | Apply F to an object |
-| `apply_protocol(proto)` | Apply F to a morphism |
-| `verify_composition()` | Check F(g∘f) == F(g)∘F(f) |
-| `compose(other)` | Functor composition G ∘ F |
-
-### `Composition`
-
-Static methods for composition strategies.
-
-| Method | Description |
-|--------|-------------|
-| `sequential(agents, cat)` | Chain agents via protocols |
-| `parallel(agents)` | Tensor all capabilities |
-| `fan_out(cap, n)` | Replicate capability n times |
-| `trace(protocol, cat)` | Feedback loop (categorical trace) |
-
-### `CapabilityStore`
-
-A registry mapping agent IDs to capabilities.
-
-| Method | Description |
-|--------|-------------|
-| `new()` | Empty store |
-| `register(id, cap)` | Register an agent |
-| `get(id)` | Lookup by agent ID |
-| `find_by_capability(prefix)` | Find agents by capability name |
-| `joint_capability(a, b)` | Tensor product of two agents' capabilities |
-
-## How It Works
-
-### Symmetric Monoidal Category Structure
-
-The library encodes a strict symmetric monoidal category (SMC):
-
-- **Objects**: `Capability` values identified by name, with arity tracking the number of parallel inputs.
-- **Morphisms**: `Protocol` values with source/target capabilities, a name, and a cost.
-- **Tensor product**: `Capability::tensor` and `Protocol::tensor` for parallel composition. The unit is `Capability::unit()` (arity 0, name "I").
-- **Composition**: `Protocol::compose` for sequential composition, requiring target-match (f.target == g.source).
-- **Structural isomorphisms**: symmetry σ, left unitor λ, right unitor ρ — all zero-cost protocols.
-
-### Path Finding
-
-`AgentCategory::find_path` uses BFS over the protocol graph to find a compositional chain of morphisms from source to target capability. Identity morphisms handle the trivial case (source == target).
-
-### Functorial Verification
-
-`AgentFunctor::verify_composition` checks that for all pairs of composable mapped protocols, composition is preserved: F(g ∘ f) = F(g) ∘ F(f).
-
-### Trace (Feedback)
-
-`Composition::trace` implements a simplified categorical trace: given a protocol f: A⊗B → A⊗C, it produces Tr(f): B → C by "feeding back" the A component. This models feedback loops in agent systems.
-
-## The Math
-
-### Symmetric Monoidal Category
-
-A symmetric monoidal category (C, ⊗, I, α, λ, ρ, σ) consists of:
-- A category C with objects and morphisms
-- A tensor product ⊗: C × C → C that is associative (up to α) and has unit I
-- Symmetry σ_{A,B}: A ⊗ B → B ⊗ A (swap)
-- Coherence conditions: the triangle and pentagon equations
-
-### Capabilities as Objects
-
-Each capability A has an arity (dimension) and the tensor adds arities: arity(A ⊗ B) = arity(A) + arity(B). The unit I has arity 0.
-
-### Protocols as Morphisms
-
-A protocol f: A → B is a morphism. Sequential composition g ∘ f: A → C requires f: A → B and g: B → C. Costs are additive: cost(g ∘ f) = cost(g) + cost(f).
-
-### Tensor Product of Morphisms
-
-Given f: A → B and g: C → D, the tensor f ⊗ g: A⊗C → B⊗D applies both morphisms in parallel.
-
-### Internal Hom (Linear Implication)
-
-The internal hom A ⊸ B = A* ⊗ B represents the capability of "transforming A into B". This is the currying/linear logic interpretation of the monoidal structure.
-
-### Functors
-
-A functor F: C → D maps objects to objects and morphisms to morphisms, preserving:
-- Identity: F(id_A) = id_{F(A)}
-- Composition: F(g ∘ f) = F(g) ∘ F(f)
-- Monoidal structure: F(A ⊗ B) ≅ F(A) ⊗ F(B), F(I) ≅ I
-
-### Trace
-
-The categorical trace Tr^A(f: A⊗B → A⊗C): B → C "feeds back" the A output to the A input. In traced monoidal categories, this gives a canonical notion of feedback/iteration.
-
-## Test Coverage
-
-31 tests across 5 modules:
-- **Capability** (8): creation, tensor product, unit identity, dual, internal hom, store operations, joint capabilities, prefix search
-- **Category** (7): empty category, add capability/protocol, symmetry, left/right unitor, path finding (direct + identity)
-- **Composition** (5): parallel, fan-out, sequential with protocols, minimum-length check, trace
-- **Functor** (5): creation, object mapping, morphism mapping, composition verification, functor composition
-- **Protocol** (6): creation, composition, type mismatch rejection, identity, tensor product, cost tracking
-
-## License
-
-MIT
+| Type | What it does |
+|------|-------------|
+| `Capability` | An object in the category. Has name, arity, tags. Tensor product = parallel. |
+| `Protocol` | A morphism A → B. Composable when types match. Tracks cost. |
+| `AgentCategory` | The category itself. Find paths, check isomorphisms, register objects/morphisms. |
+| `CapabilityStore` | Agent registry. Find by capability, compute joint capabilities. |
+| `Composition` | Strategies: sequential (pipeline), parallel (tensor), fan-out, trace (feedback). |
+| `AgentFunctor` | Maps one category to another. Simulation → Production. Preserves structure. |
