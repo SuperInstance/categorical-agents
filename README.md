@@ -1,17 +1,24 @@
 # categorical-agents
 
+[![crates.io](https://img.shields.io/crates/v/categorical-agents)](https://crates.io/crates/categorical-agents)
 [![CI](https://github.com/SuperInstance/categorical-agents/actions/workflows/ci.yml/badge.svg)](https://github.com/SuperInstance/categorical-agents/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 Composition of agents follows the same laws as composition of functions. You can reason about your fleet the same way you reason about your code.
 
-## The Problem
+## Quick Start
 
-You have agents. One searches, one summarizes, one acts. How do you compose them? Not with ad-hoc glue code — with *algebra*.
+```bash
+cargo add categorical-agents
+```
 
 ```rust
 use categorical_agents::*;
 ```
+
+## The Problem
+
+You have agents. One searches, one summarizes, one acts. How do you compose them? Not with ad-hoc glue code — with *algebra*.
 
 ---
 
@@ -419,7 +426,11 @@ This repo is part of the **SuperInstance** flagship ecosystem — agent-first co
 | Registry | Package | Install |
 |----------|---------|---------|
 | **PyPI** | `flux-vm` | `pip install flux-vm` |
+| **PyPI** | `plato-core` | `pip install plato-core` |
+| **PyPI** | `si-exocortex` | `pip install si-exocortex` |
 | **crates.io** | `fluxvm` | `cargo add fluxvm` |
+| **crates.io** | `ternary-science` | `cargo add ternary-science` |
+| **crates.io** | `categorical-agents` | `cargo add categorical-agents` |
 | **npm** | `flux-js` | `npm install flux-js` *(coming soon)* |
 
 ### Philosophy & Architecture
