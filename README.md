@@ -1,5 +1,8 @@
 # categorical-agents
 
+[![CI](https://github.com/SuperInstance/categorical-agents/actions/workflows/ci.yml/badge.svg)](https://github.com/SuperInstance/categorical-agents/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 Composition of agents follows the same laws as composition of functions. You can reason about your fleet the same way you reason about your code.
 
 ## The Problem
